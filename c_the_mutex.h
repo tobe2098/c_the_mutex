@@ -25,7 +25,7 @@ void unlockTheMutex(TheMutex* the_mutex);
   pthread_mutex_unlock(&mutex);
 
 // Quality of life 3: Out of scope, out of mind
-// Guards with cleanup attribute?
+// Guards with cleanup attribute? LALLOC!!!
 
 // Sample critical section of code
 void critical_section() {
