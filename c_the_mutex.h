@@ -8,6 +8,11 @@
 #include <pthread.h>
 
 #endif
+
+#include<stdio.h>
+
+#define DATA_SIZE 8
+
 // Quality of life 1: A wrapper for the data with the mutex
 typedef struct TheMutex {
     pthread_mutex_t mutex_internal;
@@ -16,6 +21,7 @@ typedef struct TheMutex {
 
 typedef struct TheGuard {
     void*           data;
+    pthread_mutex_t* mutex_ptr;
 } TheGuard;
 
 
@@ -37,43 +43,63 @@ int   unlockTheMutexWithData(TheMutex* the_mutex, void** data);
 // Quality of life 3: Out of scope, out of mind
 // Guards with cleanup attribute? LALLOC!!!
 
-static void mutex_unlock_cleanup(pthread_mutex_t **mutex_ptr) {
-  if (mutex_ptr && *mutex_ptr) {
-    pthread_mutex_unlock(*mutex_ptr);
+static void destroyGuard(TheGuard **guard_ptr) {
+  if (guard_ptr&&*guard_ptr) {
+    if ((*guard_ptr)->mutex_ptr)
+    pthread_mutex_unlock((*guard_ptr)->mutex_ptr);
+    (*guard_ptr)->mutex_ptr=NULL;
+    if ((*guard_ptr)->data)(*guard_ptr)->data=NULL;
   }
 }
 
-// Function to create and lock a mutex guard
-static inline TheGuard *create_mutex_guard(TheMutex *mutex) {
-    // Allocate the guard on the stack
-    TheGuard *guard = alloca(sizeof(TheGuard));
-    
-    // Set up the guard
-    guard->mutex = mutex;
-    pthread_mutex_lock(mutex);
-    
-    // Register the cleanup function
-    __attribute__((cleanup(mutex_unlock_cleanup))) pthread_mutex_t **cleanup_ptr = &guard->mutex;
-    
-    return guard;
-}
+// #define CREATE_MUTEX_GUARD(mutex_wrap)                                       \
+//     __attribute__((cleanup(destroyGuard))) TheGuard *guard = alloca(sizeof(TheGuard));                             \
+//     do {                                                                    \
+//         guard->data = (mutex_wrap)->data;                                   \
+//         if (pthread_mutex_lock(guard->mutex_ptr) != 0) {                    \
+//             perror("Failed to lock mutex");                                 \
+//             exit(EXIT_FAILURE);                                             \
+//         }                                                                   \
+//     } while (0)
+
+#define CREATE_MUTEX_GUARD(mutex_wrap, mutex_guard_ptr)                                       \
+         TheGuard *__guard __attribute__((cleanup(destroyGuard))) = alloca(sizeof(TheGuard));                         \
+        __guard->mutex_ptr = &((mutex_wrap)->mutex_internal);               \
+        __guard->data = (mutex_wrap)->data;                                   \
+        if (pthread_mutex_lock(__guard->mutex_ptr) != 0) {                    \
+            perror("Failed to lock mutex");                                 \
+            exit(EXIT_FAILURE);                                             \
+        }                                                                   \
+        mutex_guard_ptr=__guard; /* Return the guard pointer */                               \
 
 // Sample critical section of code
-void critical_section() {
+void critical_section(TheMutex* wrapper) {
+  TheGuard* guard;
+  CREATE_MUTEX_GUARD(wrapper,guard);
   printf("Critical section running...\n");
+  for (int i=0;i<DATA_SIZE;i++){
+    printf("Num:%i",(intptr_t)guard->data);
+    // printf("%i,", ((int*)guard->data)[i]);
+  }
 }
 
 int main() {
-  pthread_mutex_t mutex;
-  pthread_mutex_init(&mutex, NULL);
-
+  int* data=(int*)calloc(DATA_SIZE,sizeof(int));
+  TheMutex wrapper;
+  pthread_mutex_init(&wrapper.mutex_internal, NULL);
+  wrapper.data=data;
   // Use the macro to lock the mutex, execute the code, and unlock the mutex
-  WITH_MUTEX_LOCK(mutex, {
-    critical_section();
-    // You can add more code here if needed
-  });
 
-  pthread_mutex_destroy(&mutex);
+  // TheGuard* guard=CREATE_MUTEX_GUARD(wrapper);
+
+  critical_section(&wrapper);
+  // WITH_MUTEX_LOCK(mutex, {
+  //   critical_section();
+  //   // You can add more code here if needed
+  // });
+
+  pthread_mutex_destroy(&wrapper.mutex_internal);
+  free(data);
   return 0;
 }
 #endif
