@@ -1,20 +1,30 @@
 #ifndef _C_THE_MUTEX_HEADER
 #define _C_THE_MUTEX_HEADER
+#ifdef _WIN32 
+#include <malloc.h>
 #include <pthread.h>
-#include <stdio.h>
+#else
+#include <alloca.h>
+#include <pthread.h>
 
+#endif
 // Quality of life 1: A wrapper for the data with the mutex
 typedef struct TheMutex {
     pthread_mutex_t mutex_internal;
     void*           data;
 } TheMutex;
 
+typedef struct TheGuard {
+    void*           data;
+} TheGuard;
+
+
 // Quality of life 1.5: Cannot lock twice by requiring data adress and nulling it afterwards
 void* lockTheMutexGetData(TheMutex* the_mutex);
 int   unlockTheMutexWithData(TheMutex* the_mutex, void** data);
 
-void lockTheMutex(TheMutex* the_mutex);
-void unlockTheMutex(TheMutex* the_mutex);
+// void lockTheMutex(TheMutex* the_mutex);
+// void unlockTheMutex(TheMutex* the_mutex);
 
 // Quality of life 2: A code block wrapper so you can forget
 #define WITH_MUTEX_LOCK(mutex, code_block) \
@@ -26,6 +36,27 @@ void unlockTheMutex(TheMutex* the_mutex);
 
 // Quality of life 3: Out of scope, out of mind
 // Guards with cleanup attribute? LALLOC!!!
+
+static void mutex_unlock_cleanup(pthread_mutex_t **mutex_ptr) {
+  if (mutex_ptr && *mutex_ptr) {
+    pthread_mutex_unlock(*mutex_ptr);
+  }
+}
+
+// Function to create and lock a mutex guard
+static inline TheGuard *create_mutex_guard(TheMutex *mutex) {
+    // Allocate the guard on the stack
+    TheGuard *guard = alloca(sizeof(TheGuard));
+    
+    // Set up the guard
+    guard->mutex = mutex;
+    pthread_mutex_lock(mutex);
+    
+    // Register the cleanup function
+    __attribute__((cleanup(mutex_unlock_cleanup))) pthread_mutex_t **cleanup_ptr = &guard->mutex;
+    
+    return guard;
+}
 
 // Sample critical section of code
 void critical_section() {

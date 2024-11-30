@@ -9,9 +9,10 @@ void* lockTheMutexGetData(TheMutex* the_mutex) {
 }
 
 int unlockTheMutexWithData(TheMutex* the_mutex, void** data) {
-  if (*data != the_mutex->data) {
+  if (data==NULL|| the_mutex==NULL||*data==NULL||*data != the_mutex->data) {
     return -1;
   }
   pthread_mutex_unlock(&(the_mutex->mutex_internal));
+  *data=NULL;
   return 0;
 }
