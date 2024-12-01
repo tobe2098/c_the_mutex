@@ -1,5 +1,6 @@
 
 //TASKS
+//PUT THE MUTEX INITIALIZER AND DESTROYER JUST DEALS WITH INTERNALS, NOT WITH ALLOCATION DONE
 //MAKE A DECLARATION FOR GENERIC TYPES IN DATA, AND MAKE MACRO ACCEPT THE GUARD TYPE
 //BEFORE MAKE THE GUARD HAVE TYPE OF MUTEX WITH CONDITIONAL TO POSIX OR WINDOWS
 //THEN MAKE DIFFERENT TYPES OF LOCK WITH TRY, NOT TRY, THE SHARED ONES, ETC
@@ -23,13 +24,32 @@
 // Quality of life 1: A wrapper for the data with the mutex
 typedef struct TheMutex {
     pthread_mutex_t mutex_internal;
-    void*           data;
+    void*           __data_ptr;
 } TheMutex;
-typedef struct TheGuard {
-    void*           data;
-    pthread_mutex_t* mutex_ptr;
-} TheGuard;
 
+static int initTheMutex(TheMutex* the_mutex,void* data, const pthread_mutexattr_t * attr){
+  if(the_mutex==NULL||data==NULL) return -1;
+  int result=pthread_mutex_init(&the_mutex->mutex_internal,attr);
+  if (result!=0){
+    return -1;
+  }
+  the_mutex->__data_ptr=data;
+  return 0;
+}
+
+static int freeTheMutex(TheMutex* the_mutex){
+  if(the_mutex==NULL || the_mutex->__data_ptr==NULL) return -1;
+
+  int result = pthread_mutex_trylock(&the_mutex->mutex_internal);
+  if (result == 0) {
+      pthread_mutex_unlock(&the_mutex->mutex_internal);  // Don't forget to unlock!
+  } else {
+    return -1;
+  }
+  pthread_mutex_destroy(&the_mutex->mutex_internal);
+  the_mutex->__data_ptr=NULL;
+  return 0;
+}
 
 // Quality of life 1.5: Cannot lock twice by requiring data adress and nulling it afterwards
 void* lockTheMutexGetData(TheMutex* the_mutex);
@@ -44,6 +64,12 @@ int   unlockTheMutexWithData(TheMutex* the_mutex, void** data);
   pthread_mutex_unlock(&mutex);
 
 // Quality of life 3: Out of scope, out of mind
+
+typedef struct TheGuard {
+    void*           data;
+    pthread_mutex_t* mutex_ptr;
+} TheGuard;
+
 
 static void destroyGuard(TheGuard **guard_ptr) {
   if (guard_ptr&&*guard_ptr) {
@@ -77,7 +103,7 @@ static void destroyGuard(TheGuard **guard_ptr) {
          TheGuard *mutex_guard_ptr __attribute__((cleanup(destroyGuard))) = alloca(sizeof(TheGuard));                         \
          printf("Creating mutex guard...\n");\
         mutex_guard_ptr->mutex_ptr = &((mutex_wrap)->mutex_internal);               \
-        mutex_guard_ptr->data = (mutex_wrap)->data;                                   \
+        mutex_guard_ptr->data = (mutex_wrap)->__data_ptr;                                   \
          printf("Copied data.");\
         if (pthread_mutex_lock(mutex_guard_ptr->mutex_ptr) != 0) {                    \
             perror("Failed to lock mutex");                                 \
@@ -90,7 +116,7 @@ static void destroyGuard(TheGuard **guard_ptr) {
 #define CREATE_MUTEX_GUARD(mutex_wrap, mutex_guard_ptr)  \
          TheGuard *mutex_guard_ptr __attribute__((cleanup(destroyGuard))) = alloca(sizeof(TheGuard));                         \
         mutex_guard_ptr->mutex_ptr = &((mutex_wrap)->mutex_internal);               \
-        mutex_guard_ptr->data = (mutex_wrap)->data;                                   \
+        mutex_guard_ptr->data = (mutex_wrap)->__data_ptr;                                   \
         if (pthread_mutex_lock(mutex_guard_ptr->mutex_ptr) != 0) {                    \
             exit(EXIT_FAILURE);                                             \
         }                                                                  \
@@ -117,8 +143,7 @@ int main() {
   int* data=(int*)calloc(DATA_SIZE,sizeof(int));
   for (int i=0;i<DATA_SIZE;i++) data[i]=INT_MAX-i;
   TheMutex wrapper;
-  pthread_mutex_init(&wrapper.mutex_internal, NULL);
-  wrapper.data=data;
+  initTheMutex(&wrapper, data,NULL);
   // Use the macro to lock the mutex, execute the code, and unlock the mutex
 
   // TheGuard* guard=CREATE_MUTEX_GUARD(wrapper);
@@ -129,7 +154,7 @@ int main() {
   //   // You can add more code here if needed
   // });
 
-  pthread_mutex_destroy(&wrapper.mutex_internal);
+  freeTheMutex(&wrapper);
   free(data);
   return 0;
 }
