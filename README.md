@@ -1,6 +1,6 @@
 # c_the_mutex
 
-Your best homemade mutex interface for C (POSIX only for now). Also found in: 
+Your best homemade mutex interface for C (POSIX only for now). Also found in: [my C library](https://github.com/tobe2098/bertolib).
 
 ## Explanation
 - Using mutexes manually in C can be tiring. I hope this library, or the ideas contained in it, will help you navigate that with more ease.
