@@ -9,12 +9,11 @@
 #else
 #include <alloca.h>
 #include <pthread.h>
-
+#endif
+#ifdef DEBUG_MUTEX
+#include<stdio.h>
 #endif
 
-#include<stdio.h>
-
-#define DATA_SIZE 8
 
 // Quality of life 1: A wrapper for the data with the mutex
 typedef struct TheMutex {
@@ -49,18 +48,29 @@ static int freeTheMutex(TheMutex* the_mutex){
 
 // Quality of life 1.5: Cannot lock twice by requiring data adress and nulling it afterwards
 void* lockTheMutexGetData(TheMutex* the_mutex){
-  if (the_mutex == NULL) {
+  if (the_mutex == NULL || the_mutex->__data_ptr==NULL) {
     return NULL;
   }
   pthread_mutex_lock(&(the_mutex->mutex_internal));
-  return the_mutex->__data_ptr;
+  void* ptr=the_mutex->__data_ptr;
+  the_mutex->__data_ptr=NULL;
+  return ptr;
+}
+
+int isLocked(TheMutex* wrapper){
+  if (wrapper==NULL) return -1;
+  else return wrapper->__data_ptr==NULL;
 }
 
 int   unlockTheMutexWithData(TheMutex* the_mutex, void** data){
-  if (data==NULL|| the_mutex==NULL||*data==NULL||*data != the_mutex->__data_ptr||pthread_mutex_unlock(&(the_mutex->mutex_internal))!=0) {
+  if (data==NULL|| the_mutex==NULL||*data==NULL||NULL != the_mutex->__data_ptr) {
     return -1;
   }
+  the_mutex->__data_ptr=*data;
   *data=NULL;
+  if(pthread_mutex_unlock(&(the_mutex->mutex_internal))!=0){
+    return -2;
+  }
   return 0;
 }
 
@@ -80,6 +90,10 @@ int   unlockTheMutexWithData(TheMutex* the_mutex, void** data){
     the_mutex->__data_ptr=data;\
     return 0;\
   }\
+  int isLocked_##type(TheMutex_##type* wrapper){\
+    if (wrapper==NULL) return -1;\
+    else return wrapper->__data_ptr==NULL;\
+  }\
   static int freeTheMutex_##type(TheMutex_##type* the_mutex){\
     if(the_mutex==NULL || the_mutex->__data_ptr==NULL) return -1;\
     int result = pthread_mutex_trylock(&the_mutex->mutex_internal);\
@@ -93,20 +107,27 @@ int   unlockTheMutexWithData(TheMutex* the_mutex, void** data){
     return 0; \
   }\
   type* lockTheMutex_##type##_GetData(TheMutex_##type* the_mutex){\
-    if (the_mutex == NULL) {\
+    if (the_mutex == NULL || the_mutex->__data_ptr==NULL) {\
       return NULL;\
     }\
     pthread_mutex_lock(&(the_mutex->mutex_internal));\
-    return the_mutex->__data_ptr;\
+    void* ptr=the_mutex->__data_ptr;\
+    the_mutex->__data_ptr=NULL;\
+    return ptr;\
   }\
   \
   int   unlockTheMutex_##type##_WithData(TheMutex_##type* the_mutex, type** data){\
-    if (data==NULL|| the_mutex==NULL||*data==NULL||*data != the_mutex->__data_ptr||pthread_mutex_unlock(&(the_mutex->mutex_internal))!=0) {\
+    if (data==NULL|| the_mutex==NULL||*data==NULL||NULL != the_mutex->__data_ptr) {\
       return -1;\
     }\
+    the_mutex->__data_ptr=*data;\
     *data=NULL;\
+    if(pthread_mutex_unlock(&(the_mutex->mutex_internal))!=0){\
+      return -2;\
+    }\
     return 0;\
   }\
+
 
 // Quality of life 2: A code block wrapper so you can forget
 #define WITH_MUTEX_LOCK(mutex, code_block) \
@@ -190,17 +211,13 @@ static void destroyTheGuard(TheGuard *guard_ptr) {
         TheGuard mutex_guard __attribute__((cleanup(destroyTheGuard)));  \
         mutex_guard.mutex_ptr = &((mutex_wrap)->mutex_internal);                                 \
         mutex_guard.data = (mutex_wrap)->__data_ptr;                                             \
-        if (pthread_mutex_lock(mutex_guard.mutex_ptr) != 0) {                                    \
-            exit(EXIT_FAILURE);                                                                       \
-        }                                                                                             \
+        pthread_mutex_lock(mutex_guard.mutex_ptr);               \
 
 #define CREATE_MUTEX_GUARD_TYPE(mutex_wrap, mutex_guard,guard_type)                                   \
         guard_type mutex_guard __attribute__((cleanup(destroy##guard_type)));  \
         mutex_guard.mutex_ptr = &((mutex_wrap)->mutex_internal);                                     \
         mutex_guard.data = (mutex_wrap)->__data_ptr;                                                 \
-        if (pthread_mutex_lock(mutex_guard.mutex_ptr) != 0) {                                        \
-            exit(EXIT_FAILURE);                                                                           \
-        }                                                                                                 \
+        pthread_mutex_lock(mutex_guard.mutex_ptr);                                        \
 
 #endif
 

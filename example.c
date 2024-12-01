@@ -1,4 +1,7 @@
 #include "c_the_mutex_posix.h"
+#include<stdio.h>
+
+#define DATA_SIZE 8
 
 //Example of custom type declarations
 DECLARE_MUTEX_WRAPPER(int)
