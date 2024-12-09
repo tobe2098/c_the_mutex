@@ -27,8 +27,7 @@ Once you have access to a gcc compiler, there are mainly three quality of life f
 
 ## Examples
 
-See [example.c](./example.c) for a small demonstration of using the custom mutex guards in a threaded program using POSIX. It really is easy to use.
-
+See [example.c](./example.c) for a small demonstration of using the custom mutex guards in a threaded program using POSIX. It really is easy to use. To observe the desynchronization of changes in the executable you might need to run it a couple of times.
 
 ## Not finished as of v0.0.1
 
